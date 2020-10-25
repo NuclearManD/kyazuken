@@ -14,7 +14,7 @@ class KyazukenObject:
         return self._val
 
 class Literal:
-    def __init__(self, _type: str, value : KyazukenObject):
+    def __init__(self, _type: str, value):
         self.type = _type
         self.value = value
 
@@ -42,3 +42,31 @@ class WhileBlock:
 class ExitBlock:
     def __init__(self, code):
         self.code = code
+
+class ArrayType:
+    def __init__(self, basetype):
+        self.basetype = basetype
+
+class VariableDeclaration:
+    def __init__(self, name, _type):
+        self.name = name
+        self.type = _type
+
+class Variable:
+    def __init__(self, name):
+        self.name = name
+
+
+class BinOp:
+    def __init__(self, left, op, right):
+        self.left = left
+        self.op = op
+        self.right = right
+
+class Function:
+    def __init__(self, name, rettype, args, statements):
+        self.name = name
+        self.rettype = rettype
+        self.args = args
+        self.statements = statements
+
