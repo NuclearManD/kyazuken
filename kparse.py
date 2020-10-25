@@ -1,4 +1,5 @@
 from klang import *
+import re
 
 # Note the $ is not here - it can be used in symbol names.
 # the " and ' is handled separately because they behave oddly
@@ -7,13 +8,18 @@ TOKEN_CHARS = "~!@#%^&*()[]{}-+=;:<>/?.,|"
 # Operators that are multiple characters
 DUALOPS = ['==','>=','<=','++','--','*=','/=','+=','-=','&=','|=','^=','%=','!=']
 
+name_pattern = re.compile('[a-zA-Z$_][a-zA-Z$_0-9]*')
+
 class KyazukenLexer:
     def __init__(self, file):
         self.file = file
         self.buffer = ''
-    def get_next_token(self):
+        self.line_no = 0
+
+    def _peek_token_raw(self):
         while len(self.buffer) == 0 or self.buffer.isspace():
             self.buffer = self.file.readline()
+            self.line_no += 1
             if len(self.buffer) == 0:
                 return None
             self.buffer = self.buffer.strip()
@@ -61,16 +67,26 @@ class KyazukenLexer:
                     tmp += c
                 else:
                     tmp += c
+        return tmp, i
 
+    def get_next_token(self):
+        tmp, i = self._peek_token_raw()
         self.buffer = self.buffer[i + 1:].strip()
         return tmp
+
+    def peek_next_token(self):
+        tmp, i = self._peek_token_raw()
+        return tmp
+
+    def get_line_number(self):
+        return self.line_no
                 
 
 class KyazukenParser:
     def __init__(self, lex):
         self.lex = lex
-    def error(self, msg):
-        print(msg)
+    def syntax_error(self, msg):
+        print("line", self.lex.get_line_number(), ":", msg)
 
     def parse_file(self):
         while True:
@@ -80,7 +96,7 @@ class KyazukenParser:
                 token = self.lex.get_next_token()
 
                 if token != '{':
-                    self.error("_start not followed by '{', required syntax is _start { <...code...> }")
+                    self.syntax_error("_start not followed by '{', required syntax is _start { <...code...> }")
                     break
                 self.entry = self.parse_main()
 
@@ -99,31 +115,80 @@ class KyazukenParser:
             if statement == None:
                 break
 
-            tree.append(statement)
+            if statement != ';':
+                tree.append(statement)
 
         return tree
 
     def parse_statement(self):
-        tokens = []
+        token = self.lex.get_next_token()
 
-        while True:
+        if token == '}':
+            return None
+
+        if token == None:
+            self.syntax_error("EOF inside unterminated block of code.  You probably forgot a '}'")
+            return None
+
+        if token == ';':
+            return ';'
+
+        if token in ['if', 'while']:
+            block = token
             token = self.lex.get_next_token()
+            if token != '(':
+                self.syntax_error("'(' not found after " + block + " block.  Must use parenthesis around condition.")
 
-            if token == '}':
-                if len(tokens) != 0:
-                    self.error("'}' after unterminated statement - perhaps you were missing a semicolon?")
-                return None
+            expr = self.parse_expr_to_paren()
 
-            if token == None or token == ';':
-                break
-
-            elif token == '{':
-                tokens.append(self.parse_code())
+            token = self.lex.peek_next_token()
+            if token != '{':
+                self.lex.get_next_token()
+                li = [self.parse_statement()]
             else:
-                tokens.append(token)
+                li = self.parse_code()
 
-        return tokens
+            if block == 'if':
+                return IfBlock(expr, li)
+            elif block == 'while':
+                return WhileBlock(expr, li)
 
+        if token == 'exit':
+            exit_code = self.parse_expr_to_semicolon()
+            return ExitBlock(exit_code)
+
+        if name_pattern.fullmatch(token) != None:
+            a = token
+            b = self.lex.get_next_token()
+
+            if name_pattern.fullmatch(b) != None:
+                # Variable declaration, can't handle this *yet*
+                if self.lex.get_next_token() != ';':
+                    self.syntax_error("Missing semicolon after variable decleration")
+                return a + ' ' + b
+
+            elif b == '(':
+                # Function call
+                args = self.parse_expr_tuple()
+                if self.lex.get_next_token() != ';':
+                    self.syntax_error("Missing semicolon after function call.")
+                return FunctionCall(a, args)
+
+    def parse_expr_to_paren(self):
+        return Literal('String', self.lex.get_next_token())
+    def parse_expr_to_semicolon(self):
+        return Literal('String', self.lex.get_next_token())
+    def parse_expr_tuple(self):
+        li = []
+        while True:
+            token = self.lex.peek_next_token()
+            if token == ')':
+                break
+            li.append(self.parse_expr_to_semicolon())
+
+        self.lex.get_next_token()
+        return tuple(li)
+    
 
 f = open('test.kya')
 lex = KyazukenLexer(f)
