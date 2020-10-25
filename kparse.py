@@ -311,11 +311,11 @@ class Parser:
 
         @self.pg.production('expression : INTEGER')
         def number(p):
-            return Literal('int', p[0].getstr())
+            return Literal('int', int(p[0].getstr()))
 
         @self.pg.production('expression : DOUBLE')
         def number(p):
-            return Literal('float', p[0].getstr())
+            return Literal('float', float([0].getstr()))
 
         @self.pg.production('expression : CHAR')
         def number(p):
@@ -332,7 +332,14 @@ class Parser:
         @self.pg.production('type : NAME')
         @self.pg.production('type : BOOL')
         def base_type(p):
-            return p[0].getstr()
+            s = p[0].getstr()
+
+            if s == 'int':
+                s = 'int32'
+            elif s == 'float':
+                s = 'float32'
+
+            return s
 
         @self.pg.error
         def error_handle(token):
@@ -343,14 +350,22 @@ class Parser:
     def get_parser(self):
         return self.pg.build()
 
+kprintln = PyFunctionWrapper('println', 'void', [VariableDeclaration('s', 'String')], print)
+
 f = open('test.kya')
 
+print('Lex...')
 lexer = Lexer().get_lexer()
 tokens = lexer.lex(f.read())
 
-
+print('Parse...')
 pg = Parser()
 pg.parse()
 parser = pg.get_parser()
 ast = parser.parse(tokens)
 
+print('Elaborate...')
+document = elaborate_ast(ast)
+
+print('Execute:')
+document.execute(KyazukenEnvironment({'_Z7printlnEP6StringR4void':kprintln}))
