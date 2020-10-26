@@ -11,6 +11,13 @@ def name_and_argtypes_to_signature(name, argtypes):
 
     return s
 
+class KyazukenError(Exception):
+    def __init__(self, message):
+        self.message = message
+
+    def __str__(self):
+        return self.message
+
 class KyazukenClass:
     def __init__(self, name):
         self.name = name
@@ -27,7 +34,7 @@ class KyazukenObject:
         sig = name_and_argtypes_to_signature(name, arg_types)
 
         if not sig in self.functions:
-            raise Exception(str(self) + " has no member " + name + " with arguments " + arg_types)
+            raise KyazukenError(str(self) + " has no member " + name + " with arguments " + arg_types)
 
         return self.functions[sig]
 
@@ -123,7 +130,7 @@ class IfBlock:
     def execute(self, context):
         et, ev = self.condition.eval(context)
         if et != 'bool':
-            raise Exception('Invalid expression for if block')
+            raise KyazukenError('Invalid expression for if block')
         if ev:
             return self.statement.execute(context)
 
@@ -136,7 +143,7 @@ class IfElseBlock:
     def execute(self, context):
         et, ev = self.condition.eval(context)
         if et != 'bool':
-            raise Exception('Invalid expression for if block')
+            raise KyazukenError('Invalid expression for if block')
         if ev:
             return self.statement.execute(context)
         else:
@@ -151,7 +158,7 @@ class WhileBlock:
             et, ev = self.iterable.eval(context)
 
             if et != 'bool':
-                raise Exception('Invalid expression for if block')
+                raise KyazukenError('Invalid expression for if block')
             if not ev:
                 break
 
@@ -207,7 +214,7 @@ class ArrayObject(KyazukenObject):
         if _type == self.type:
             self.data[i] = value
         else:
-            raise Exception("Cannot assign " + str(_type) + " to " + str(ArrayType(self.type)))
+            raise KyazukenError("Cannot assign " + str(_type) + " to " + str(ArrayType(self.type)))
     
 
 class VariableDeclaration:
@@ -231,7 +238,7 @@ class Subscript:
         it, iv = self.idx.eval(context)
 
         if not it.startswith('int'):
-            raise Exception("Failed: attempted subscript of " + str(self.src) + ' using type ' + str(it))
+            raise KyazukenError("Failed: attempted subscript of " + str(self.src) + ' using type ' + str(it))
 
         return sv[iv]
 
@@ -240,7 +247,7 @@ class Subscript:
         it, iv = self.idx.eval(context)
 
         if not it.startswith('int'):
-            raise Exception("Failed: attempted subscript of " + str(self.src) + ' using type ' + str(it))
+            raise KyazukenError("Failed: attempted subscript of " + str(self.src) + ' using type ' + str(it))
 
         return sv.assign_idx(context, iv, _type, val)
 
@@ -287,7 +294,7 @@ class BinOp:
         elif self.op == '!=':
             return 'bool', a != b
         else:
-            raise Exception("Invalid operation: " + str(ta) + ' ' + self.op + ' ' + str(tb))
+            raise KyazukenError("Invalid operation: " + str(ta) + ' ' + self.op + ' ' + str(tb))
 
 class UniOp:
     def __init__(self, left, op):
@@ -305,7 +312,7 @@ class UniOp:
         elif self.op == '++':
             ev = ev + 1
         else:
-            raise Exception("Invalid operation: " + self.op + ' ' + str(et))
+            raise KyazukenError("Invalid operation: " + self.op + ' ' + str(et))
 
         if self.op == '++' or self.op == '--':
             self.left.assign(context, et, ev)
@@ -454,7 +461,7 @@ class Context:
 
     def setvar(self, name, val):
         if not name in self.vars.keys():
-            raise Exception('Variable ' + name + ' does not exist.')
+            raise KyazukenError('Variable ' + name + ' does not exist.')
         self.vars[name] = val
 
     def mkvar(self, varname, value):
@@ -472,7 +479,7 @@ class KyazukenEnvironment:
         s = name_and_argtypes_to_signature(name, argtypes)
 
         if not s in self.functions.keys():
-            raise Exception("Did not find function '" + name + '\' accepting arguments ' + str(argtypes))
+            raise KyazukenError("Did not find function '" + name + '\' accepting arguments ' + str(argtypes))
         else:
             f = self.functions[s]
 

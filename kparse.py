@@ -3,6 +3,7 @@ from klang import *
 from rply import LexerGenerator
 from rply import ParserGenerator
 
+import sys
 
 class Lexer():
     def __init__(self):
@@ -417,4 +418,8 @@ print('Elaborate...')
 document = elaborate_ast(ast)
 
 print('Execute:')
-document.execute(KyazukenEnvironment({'_Z7printlnEP6String':kprintln}))
+
+try:
+    document.execute(KyazukenEnvironment({'_Z7printlnEP6String':kprintln}))
+except KyazukenError as e:
+    sys.stderr.write("Error: " + str(e) + '\n')
