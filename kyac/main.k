@@ -52,4 +52,8 @@ void main(String[] argv) {
 	}
 
 	println("Needed files will automatically be added.");
+
+	CodeBuilder builder = new CodeBuilder(argv[1]);
+
+	builder.accumulate();
 }

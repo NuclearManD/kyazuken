@@ -11,6 +11,18 @@ def name_and_argtypes_to_signature(name, argtypes):
 
     return s
 
+def class_and_argtypes_to_signature(name, argtypes):
+    s = '_ZN' + str(len(name)) + name + 'C1E'
+    s += 'P'
+    for i in argtypes:
+
+        if type(i) == ArrayType:
+            s += 'p' + str(len(i.basetype)) + i.basetype
+        else:
+            s += str(len(i)) + i
+
+    return s
+
 class KyazukenError(Exception):
     def __init__(self, message):
         self.message = message
@@ -62,19 +74,7 @@ class Constructor:
         self.args = args
         self.statements = statements
     def signature(self):
-        s = '_Z' + str(len(self.name)) + self.name + 'C1E'
-        s += 'P'
-        for i in self.args:
-            i = i.type
-
-            if type(i) == ArrayType:
-                s += 'p' + str(len(i.basetype)) + i.basetype
-            else:
-                s += str(len(i)) + i
-
-        s += 'R' + str(len(self.rettype)) + self.rettype
-
-        return s
+        return class_and_argtypes_to_signature(self.name, [i.type for i in self.args])
 
     def call(self, environment, arguments):
 
@@ -85,7 +85,9 @@ class Constructor:
         context = Context(environment, argdict)
         for i in self.statements:
             i.execute(context)
-        
+
+    def head_str(self):
+        return self.name + '(' + ', '.join([str(i) for i in self.args]) + ')'
 
 class Literal:
     def __init__(self, _type: str, value):
@@ -107,6 +109,22 @@ class FunctionCall:
         args = [i.eval(context) for i in self.args]
 
         f = self.func.get_function(context, [i[0] for i in args])
+        return f.call(context, [i[1] for i in args])
+
+    def execute(self, context):
+        self.eval(context)
+
+class NewObject:
+    def __init__(self, name, args):
+        self.name = name
+        self.args = args
+
+    def eval(self, context):
+        _class = context.get_class(self.name)
+
+        args = [i.eval(context) for i in self.args]
+
+        f = _class.get_constructor([i[0] for i in args])
         return f.call(context, [i[1] for i in args])
 
     def execute(self, context):
@@ -208,8 +226,9 @@ class ArrayObject(KyazukenObject):
     def length(self):
         return len(self.data)
 
-    def __getitem__(self, i):
-        return self.data[i]
+    def getitem(self, i):
+        return self.type, self.data[i]
+
     def setitem(self, i, _type, value):
         if _type == self.type:
             self.data[i] = value
@@ -222,11 +241,21 @@ class VariableDeclaration:
         self.name = name
         self.type = _type
 
+    def __str__(self):
+        return str(self.type) + ' ' + self.name
+
 class VariableDefinition:
     def __init__(self, name, _type, value_expr):
         self.name = name
         self.type = _type
         self.expr = value_expr
+
+    def execute(self, context):
+        t, v = self.expr.eval(context)
+
+        if t != self.type:
+            raise KyazukenError('Attempted to assign a ' + str(t) + ' to new variable of type ' + str(self.type))
+        context.mkvar(self.name, v)
 
 class Subscript:
     def __init__(self, src, idx):
@@ -240,7 +269,7 @@ class Subscript:
         if not it.startswith('int'):
             raise KyazukenError("Failed: attempted subscript of " + str(self.src) + ' using type ' + str(it))
 
-        return sv[iv]
+        return sv.getitem(iv)
 
     def assign(self, context, _type, val):
         st, sv = self.src.eval(context)
@@ -249,7 +278,7 @@ class Subscript:
         if not it.startswith('int'):
             raise KyazukenError("Failed: attempted subscript of " + str(self.src) + ' using type ' + str(it))
 
-        return sv.assign_idx(context, iv, _type, val)
+        return sv.setitem(context, iv, _type, val)
 
 class Variable:
     def __init__(self, name):
@@ -377,67 +406,74 @@ class Function:
 class ClassDefinition:
     def __init__(self, name, items):
         self.name = name
-        con = []
-        func = []
-        var = []
+        self._handle_items(items)
+
+    def _handle_items(self, items):
+        name = self.name
+        con = {}
+        func = {}
+        var = {}
         for i in items:
             if isinstance(i, VariableDeclaration):
-                var.append(i)
+                var[i.name] = i
             elif isinstance(i, Constructor):
                 if i.name != name:
                     raise ValueError("Constructor name is {} but class name is {}".format(i.name, name))
-                con.append(i)
+                con[i.signature()] = i
+
+                # set class for constructor so it can find it later
+                i._class = self
+
             elif isinstance(i, Function):
-                i.args.insert(0, VariableDeclaration('this', ObjectType(name)))
-                func.append(i)
+                func[i.signature()] = i
+            else:
+                raise Exception(i)
         self.con = con
         self.func = func
         self.vars = var
-        self.compiled = False
+
+    def get_constructor(self, argtypes):
+        s = class_and_argtypes_to_signature(self.name, argtypes)
+
+        if not s in self.con.keys():
+            msg = 'No constructor for class ' + self.name + ' matches argument types ' + str(argtypes) + '\n'
+            if len(self.con.keys()) == 0:
+                msg += "This class does not have any constructors."
+            else:
+                msg += 'Note: available constructors:\n'
+                for i in self.con.values():
+                    msg += '  ' + i.head_str() + '\n'
+
+            raise KyazukenError(msg)
+
+        return self.con[s]
 
     def __str__(self):
         s = 'class ' + self.name + ' {\n'
-        for i in self.vars:
+        for i in self.vars.values():
             s += '\t' + str(i) + ';\n'
         s += '\n'
-        for i in self.con:
+        for i in self.con.values():
             s += '\t' + str(i) + '\n'
         s += '\n'
-        for i in self.func:
+        for i in self.func.values():
             s += '\t' + str(i) + '\n'
         return s + '}\n'
 
-class ClassInheriting:
+class ClassInheriting(ClassDefinition):
     def __init__(self, name, items, inherited):
         self.name = name
-        con = []
-        func = []
-        var = []
-        for i in items:
-            if isinstance(i, VariableDeclaration):
-                var.append(i)
-            elif isinstance(i, Constructor):
-                if i.name != name:
-                    raise ValueError("Constructor name is {} but class name is {}".format(i.name, name))
-                con.append(i)
-            elif isinstance(i, Function):
-                i.args.insert(0, VariableDeclaration('this', ObjectType(name)))
-                func.append(i)
-        self.con = con
-        self.func = func
-        self.vars = var
-        self.inherited = inherited
-        self.compiled = False
+        self._handle_items(items)
 
     def __str__(self):
         s = 'class ' + self.name + ' extends ' + self.inherited + ' {\n'
-        for i in self.vars:
+        for i in self.vars.values():
             s += '\t' + str(i) + ';\n'
         s += '\n'
-        for i in self.con:
+        for i in self.con.values():
             s += '\t' + str(i) + '\n'
         s += '\n'
-        for i in self.func:
+        for i in self.func.values():
             s += '\t' + str(i) + '\n'
         return s + '}\n'
 
@@ -470,9 +506,13 @@ class Context:
     def get_function(self, name, argtypes):
         return self.env.get_function(name, argtypes)
 
+    def get_class(self, name):
+        return self.env.get_class(name)
+
 class KyazukenEnvironment:
-    def __init__(self, functions):
+    def __init__(self, functions, classes):
         self.functions = functions
+        self.classes = classes
 
     def get_function(self, name, argtypes):
 
@@ -485,6 +525,9 @@ class KyazukenEnvironment:
 
         return f
 
+    def get_class(self, name):
+        return self.classes[name]
+
 class KyazukenDocument:
     def __init__(self, entry = None):
         self.functions = {}
@@ -496,6 +539,19 @@ class KyazukenDocument:
         else:
             self.entry.call(environment, [])
 
+    def make_default_env(self):
+
+        # Set up base environment
+        functions = {}
+        kprintln = PyFunctionWrapper('println', 'void', [VariableDeclaration('s', 'String')], print)
+        functions['_Z7printlnEP6String'] = kprintln
+
+        # Add user functions
+        functions.update(self.functions)
+
+        # Create the environment
+        return KyazukenEnvironment(functions, self.classes)
+
 def elaborate_ast(ast):
     doc = KyazukenDocument()
 
@@ -506,5 +562,7 @@ def elaborate_ast(ast):
                 doc.entry = i
             else:
                 doc.functions[i.signature()] = i
+        elif type(i) in [ClassDefinition, ClassInheriting]:
+            doc.classes[i.name] = i
 
     return doc

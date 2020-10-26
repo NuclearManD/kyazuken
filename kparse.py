@@ -18,18 +18,20 @@ class Lexer():
         self.lexer.add('BOOL', r'\bbool\b')
 
         # Other reserved words
-        self.lexer.add('IF', r'if')
-        self.lexer.add('ELSE', r'else')
-        self.lexer.add('WHILE', r'while')
-        self.lexer.add('FOR', r'for')
-        self.lexer.add('CLASS', r'class')
-        self.lexer.add('MUTABLE', r'mutable')
-        self.lexer.add('PUBLIC', r'public')
-        self.lexer.add('PRIVATE', r'private')
+        self.lexer.add('IF', r'\bif\b')
+        self.lexer.add('ELSE', r'\belse\b')
+        self.lexer.add('WHILE', r'\bwhile\b')
+        self.lexer.add('FOR', r'\bfor\b')
+        self.lexer.add('CLASS', r'\bclass\b')
+        self.lexer.add('MUTABLE', r'\bmutable\b')
+        self.lexer.add('PUBLIC', r'\bpublic\b')
+        self.lexer.add('PRIVATE', r'\bprivate\b')
         self.lexer.add('IMPORT', r'\bimport\b')
 
-        self.lexer.add('RETURN', r'return')
-        self.lexer.add('EXTENDS', r'extends')
+        self.lexer.add('RETURN', r'\breturn\b')
+        self.lexer.add('EXTENDS', r'\bextends\b')
+
+        self.lexer.add('NEW', r'\bnew\b')
         
         # Name of function or variable
         self.lexer.add('NAME', r'[a-zA-Z_$][a-zA-Z_$0-9]*')
@@ -92,12 +94,12 @@ class Parser:
             # A list of all token names accepted by the parser.
             ['INTEGER', 'NAME', 'OPEN_PAREN', 'CLOSE_PAREN', 'INTTYPE', 'MEMBER', 'FLOATTYPE',
              'OPEN_CURLY', 'CLOSE_CURLY', 'VOID', "STRING", 'STRINGTYPE', 'OPEN_BRACKET', 'CLOSE_BRACKET',
-             'IF', 'WHILE', 'RETURN', 'COLON', 'CLASS', 'EXTENDS', 'MUTABLE', 'NOT',
+             'IF', 'WHILE', 'RETURN', 'COLON', 'CLASS', 'EXTENDS', 'MUTABLE', 'NOT', 'NEW',
              'DOUBLE', 'BOOL', 'CHAR', 'IMPORT', 'PUBLIC', 'PRIVATE', 'FOR', 'ELSE',
              'SEMICOLON', 'COMMA', 'EQ'] + OP_NAMES,
             precedence = [
                 ('right', ['ELSE']),
-                ('left', ['IF', 'COLON', 'END', 'WHILE',]),
+                ('left', ['IF', 'COLON', 'END', 'WHILE', 'NEW']),
                 ('left', ['EQ']),
                 ('left', ['&&', '||', '^^']),
                 ('left', ['==', '!=', '>=','>', '<', '<=',]),
@@ -169,12 +171,15 @@ class Parser:
         def class_list_1(p):
             return []
 
-        @self.pg.production('class_li : class_li scope func')
-        @self.pg.production('class_li : class_li scope constructor')
         @self.pg.production('class_li : class_li var_dec SEMICOLON')
         @self.pg.production('class_li : class_li var_dec_eq SEMICOLON')
         def class_list_2(p):
             return p[0] + [p[1]]
+        
+        @self.pg.production('class_li : class_li scope func')
+        @self.pg.production('class_li : class_li scope constructor')
+        def class_list_3(p):
+            return p[0] + [p[2]]
 
         @self.pg.production('scope : PUBLIC')
         @self.pg.production('scope : PRIVATE')
@@ -196,6 +201,10 @@ class Parser:
         @self.pg.production('constructor : NAME OPEN_PAREN dec_list CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
         def constructor(p):
             return Constructor(p[0].getstr(), p[2], p[5])
+
+        @self.pg.production('expression : NEW NAME OPEN_PAREN expr_li CLOSE_PAREN')
+        def new_object(p):
+            return NewObject(p[1].getstr(), p[3])
 
         @self.pg.production('statement_li : statement')
         def statement_list_1(p):
@@ -284,10 +293,6 @@ class Parser:
         @self.pg.production('assignable : expression OPEN_BRACKET expression CLOSE_BRACKET')
         def subscript(p):
             return Subscript(p[0], p[2])
-
-        @self.pg.production('expression : expression OPEN_BRACKET expression COLON expression CLOSE_BRACKET')
-        def subset(p):
-            return Subset(p[0], p[2], p[4])
 
         @self.pg.production('expression : expression SUM expression')
         @self.pg.production('expression : expression SUB expression')
@@ -400,8 +405,6 @@ class Parser:
     def get_parser(self):
         return self.pg.build()
 
-kprintln = PyFunctionWrapper('println', 'void', [VariableDeclaration('s', 'String')], print)
-
 f = open('kyac/main.k')
 
 print('Lex...')
@@ -420,6 +423,6 @@ document = elaborate_ast(ast)
 print('Execute:')
 
 try:
-    document.execute(KyazukenEnvironment({'_Z7printlnEP6String':kprintln}), ['kyac', 'kyac/main.k'])
+    document.execute(document.make_default_env(), ['kyac', 'kyac/main.k'])
 except KyazukenError as e:
     sys.stderr.write("Error: " + str(e) + '\n')
