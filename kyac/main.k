@@ -44,7 +44,11 @@ class CodeBuilder {
 
 void main(String[] argv) {
 	if (argv.length() != 2) {
-		println("Usage: " + argv[0] + " [filename]");
+		if (argv.length() == 0)
+			println("Warning: problem detected in execution environment: argv.length() is 0.\n Usage: kyac [filename]");
+		else
+			println("Usage: " + argv[0] + " [filename]");
+
 		println("Needed files will automatically be added.");
 		exit(100);
 	}

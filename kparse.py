@@ -18,6 +18,7 @@ class Lexer():
 
         # Other reserved words
         self.lexer.add('IF', r'if')
+        self.lexer.add('ELSE', r'else')
         self.lexer.add('WHILE', r'while')
         self.lexer.add('FOR', r'for')
         self.lexer.add('CLASS', r'class')
@@ -91,10 +92,11 @@ class Parser:
             ['INTEGER', 'NAME', 'OPEN_PAREN', 'CLOSE_PAREN', 'INTTYPE', 'MEMBER', 'FLOATTYPE',
              'OPEN_CURLY', 'CLOSE_CURLY', 'VOID', "STRING", 'STRINGTYPE', 'OPEN_BRACKET', 'CLOSE_BRACKET',
              'IF', 'WHILE', 'RETURN', 'COLON', 'CLASS', 'EXTENDS', 'MUTABLE', 'NOT',
-             'DOUBLE', 'BOOL', 'CHAR', 'IMPORT', 'PUBLIC', 'PRIVATE', 'FOR',
+             'DOUBLE', 'BOOL', 'CHAR', 'IMPORT', 'PUBLIC', 'PRIVATE', 'FOR', 'ELSE',
              'SEMICOLON', 'COMMA', 'EQ'] + OP_NAMES,
             precedence = [
-                ('left', ['IF', 'COLON', 'ELSE', 'END', 'WHILE',]),
+                ('right', ['ELSE']),
+                ('left', ['IF', 'COLON', 'END', 'WHILE',]),
                 ('left', ['EQ']),
                 ('left', ['&&', '||', '^^']),
                 ('left', ['==', '!=', '>=','>', '<', '<=',]),
@@ -214,23 +216,33 @@ class Parser:
             x.lineinfo = p[1].getsourcepos()
             return x
 
-        @self.pg.production('statement : IF expression OPEN_CURLY statement_li CLOSE_CURLY')
+        @self.pg.production('statement : IF OPEN_PAREN expression CLOSE_PAREN statement ELSE statement')
+        def if_else_block(p):
+            x = IfElseBlock(p[2], p[4], p[6])
+            x.lineinfo = p[0].getsourcepos()
+            return x
+
+        @self.pg.production('statement : IF OPEN_PAREN expression CLOSE_PAREN statement')
         def if_block(p):
-            x = IfBlock(p[1], p[3])
+            x = IfBlock(p[2], p[4])
             x.lineinfo = p[0].getsourcepos()
             return x
 
-        @self.pg.production('statement : FOR OPEN_PAREN var_dec COLON expression CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
+        @self.pg.production('statement : FOR OPEN_PAREN var_dec COLON expression CLOSE_PAREN statement')
         def iterator_for_block(p):
-            x = IterForBlock(p[2], p[4], p[7])
+            x = IterForBlock(p[2], p[4], p[6])
             x.lineinfo = p[0].getsourcepos()
             return x
 
-        @self.pg.production('statement : WHILE expression OPEN_CURLY statement_li CLOSE_CURLY')
+        @self.pg.production('statement : WHILE OPEN_PAREN expression CLOSE_PAREN statement')
         def while_loop(p):
-            x = WhileLoop(p[1], p[3])
+            x = WhileLoop(p[2], p[4])
             x.lineinfo = p[0].getsourcepos()
             return x
+
+        @self.pg.production('statement : OPEN_CURLY statement_li CLOSE_CURLY')
+        def statement_group(p):
+            return StatementList(p[1])
 
         @self.pg.production('statement : RETURN expression SEMICOLON')
         def return_expr(p):
@@ -405,4 +417,4 @@ print('Elaborate...')
 document = elaborate_ast(ast)
 
 print('Execute:')
-document.execute(KyazukenEnvironment({'_Z7printlnEP6StringR4void':kprintln}))
+document.execute(KyazukenEnvironment({'_Z7printlnEP6String':kprintln}))

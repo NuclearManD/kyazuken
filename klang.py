@@ -1,4 +1,16 @@
 
+def name_and_argtypes_to_signature(name, argtypes):
+    s = '_Z' + str(len(name)) + name + 'E'
+    s += 'P'
+    for i in argtypes:
+
+        if type(i) == ArrayType:
+            s += 'p' + str(len(i.basetype)) + i.basetype
+        else:
+            s += str(len(i)) + i
+
+    return s
+
 class KyazukenClass:
     def __init__(self, name):
         self.name = name
@@ -8,10 +20,22 @@ class KyazukenEntryPoint:
         self.lines = lines
 
 class KyazukenObject:
-    def __init__(self, val):
-        self._val = val
-    def resolve(self):
-        return self._val
+    def __init__(self):
+        self.functions = {}
+
+    def get_function(self, context, name, arg_types):
+        sig = name_and_argtypes_to_signature(name, arg_types)
+
+        if not sig in self.functions:
+            raise Exception(str(self) + " has no member " + name + " with arguments " + arg_types)
+
+        return self.functions[sig]
+
+    def add_function(self, f):
+        self.functions[f.signature()] = f
+
+        # Tell the function it belongs to a class
+        f.this = self
 
 class ImportStatement:
     def __init__(self, path):
@@ -68,36 +92,78 @@ class Literal:
         return self.type
 
 class FunctionCall:
-    def __init__(self, name : str, args : tuple):
-        self.name = name
+    def __init__(self, func, args : tuple):
+        self.func = func
         self.args = args
-    def execute(self, context):
-        args = [i.eval(context) for i in self.args]
-        context.call(self.name.name, 'void', [i[0] for i in args], [i[1] for i in args])
 
+    def eval(self, context):
+        args = [i.eval(context) for i in self.args]
+
+        f = self.func.get_function(context, [i[0] for i in args])
+        return f.call(context, [i[1] for i in args])
+
+    def execute(self, context):
+        self.eval(context)
+
+class StatementList:
+    def __init__(self, statements):
+        self.statements = statements
+
+    def execute(self, context):
+        for i in self.statements:
+            v = i.execute(context)
+
+            if v != None:
+                return v
 
 class IfBlock:
-    def __init__(self, condition, lines):
+    def __init__(self, condition, statement):
         self.condition = condition
-        self.lines = lines
+        self.statement = statement
     def execute(self, context):
         et, ev = self.condition.eval(context)
         if et != 'bool':
             raise Exception('Invalid expression for if block')
         if ev:
-            for i in self.lines:
-                i.execute(context)
+            return self.statement.execute(context)
+
+class IfElseBlock:
+    def __init__(self, condition, statement, else_statement):
+        self.condition = condition
+        self.statement = statement
+        self.else_statement = else_statement
+
+    def execute(self, context):
+        et, ev = self.condition.eval(context)
+        if et != 'bool':
+            raise Exception('Invalid expression for if block')
+        if ev:
+            return self.statement.execute(context)
+        else:
+            return self.else_statement.execute(context)
 
 class WhileBlock:
     def __init__(self, condition, lines):
         self.condition = condition
         self.lines = lines
+    def execute(self, context):
+        while True:
+            et, ev = self.iterable.eval(context)
+
+            if et != 'bool':
+                raise Exception('Invalid expression for if block')
+            if not ev:
+                break
+
+            v = self.statement.execute(context)
+            if v != None:
+                return v
 
 class IterForBlock:
-    def __init__(self, vardec, iterable, lines):
+    def __init__(self, vardec, iterable, statement):
         self.vardec = vardec
         self.iterable = iterable
-        self.lines = lines
+        self.statement = statement
     def execute(self, context):
         et, ev = self.iterable.eval(context)
         while True:
@@ -107,6 +173,10 @@ class IterForBlock:
 
             mini_context = Context(context, {self.vardec.name: val})
 
+            v = self.statement.execute(context)
+            if v != None:
+                return v
+
 class ExitBlock:
     def __init__(self, code):
         self.code = code
@@ -115,10 +185,30 @@ class ArrayType:
     def __init__(self, basetype):
         self.basetype = basetype
 
-class ArrayObject:
+    def __str__(self):
+        return str(self.basetype) + '[]'
+
+class ArrayObject(KyazukenObject):
     def __init__(self, basetype, data):
+        super().__init__()
+
         self.type = basetype
         self.data = data
+
+        # Add functions
+        self.add_function(PyFunctionWrapper('length', 'int', [], self.length))
+
+    def length(self):
+        return len(self.data)
+
+    def __getitem__(self, i):
+        return self.data[i]
+    def setitem(self, i, _type, value):
+        if _type == self.type:
+            self.data[i] = value
+        else:
+            raise Exception("Cannot assign " + str(_type) + " to " + str(ArrayType(self.type)))
+    
 
 class VariableDeclaration:
     def __init__(self, name, _type):
@@ -158,6 +248,12 @@ class Variable:
     def __init__(self, name):
         self.name = name
 
+    def eval(self, context):
+        return '', context.getvar(self.name)
+
+    def get_function(self, context, argtypes):
+        return context.get_function(self.name, argtypes)
+
 class BinOp:
     def __init__(self, left, op, right):
         self.left = left
@@ -188,8 +284,10 @@ class BinOp:
             return ta, a % b
         elif self.op == '==':
             return 'bool', a == b
+        elif self.op == '!=':
+            return 'bool', a != b
         else:
-            raise Exception("Invalid operation")
+            raise Exception("Invalid operation: " + str(ta) + ' ' + self.op + ' ' + str(tb))
 
 class UniOp:
     def __init__(self, left, op):
@@ -206,6 +304,8 @@ class UniOp:
             ev = ev - 1
         elif self.op == '++':
             ev = ev + 1
+        else:
+            raise Exception("Invalid operation: " + self.op + ' ' + str(et))
 
         if self.op == '++' or self.op == '--':
             self.left.assign(context, et, ev)
@@ -234,6 +334,10 @@ class Member:
 
         ev.assign_sub(context, self.sub, _type, val)
 
+    def get_function(self, context, arg_types):
+        et, ev = self.src.eval(context)
+        return ev.get_function(context, self.sub, arg_types)
+
 class Function:
     def __init__(self, name, rettype, args, statements):
         self.name = name
@@ -250,8 +354,6 @@ class Function:
                 s += 'p' + str(len(i.basetype)) + i.basetype
             else:
                 s += str(len(i)) + i
-
-        s += 'R' + str(len(self.rettype)) + self.rettype
 
         return s
 
@@ -340,99 +442,41 @@ class PyFunctionWrapper(Function):
         self.args = args
         self.f = f
     def call(self, env, args):
-        self.f(*args)
+        return self.rettype, self.f(*args)
 
 class Context:
     def __init__(self, env, var):
         self.vars = var
         self.env = env
+
     def getvar(self, name):
         return self.vars[name]
+
     def setvar(self, name, val):
         if not name in self.vars.keys():
             raise Exception('Variable ' + name + ' does not exist.')
         self.vars[name] = val
+
     def mkvar(self, varname, value):
         self.vars[varname] = value
-    def call(self, name, expect_rettype, argtypes, argvals):
-        return self.env.call(self, name, expect_rettype, argtypes, argvals)
+
+    def get_function(self, name, argtypes):
+        return self.env.get_function(name, argtypes)
 
 class KyazukenEnvironment:
     def __init__(self, functions):
         self.functions = functions
-    def call(self, environment, name, expect_rettype, argtypes, argvals):
 
-        # first figure out the function signature
-        s = '_Z' + str(len(name)) + name + 'E'
-        s += 'P'
-        for i in argtypes:
-            if type(i) == ArrayType:
-                s += 'p' + str(len(i.basetype)) + i.basetype
-            else:
-                s += str(len(i)) + i
+    def get_function(self, name, argtypes):
 
-        s_r = s + 'R' + str(len(expect_rettype)) + expect_rettype
+        s = name_and_argtypes_to_signature(name, argtypes)
 
-        if not s_r in self.functions.keys():
-            candidates = []
-            for i in self.functions.keys():
-                if i.startswith(s):
-                    candidates.append(i)
-
-            if expect_rettype == 'void':
-                if len(candidates) > 1:
-                    raise Exception("Too many candidates for " + name)
-                elif len(candidates) == 0:
-                    raise Exception("No function matches requested " + name)
-                else:
-                    f = self.functions[candidates[0]]
-            elif expect_rettype.startswith('int'):
-
-                int_candidates = []
-                for i in candidates:
-                    i = self.functions[i]
-                    if i.rettype in ['int', 'int8', 'int16', 'int32', 'int64']:
-                        int_candidates.append(i)
-
-                if len(int_candidates) > 1:
-                    raise Exception("Too many candidates for " + name)
-                elif len(int_candidates) == 0:
-                    raise Exception("No function matches requested " + name)
-                else:
-                    f = int_candidates[0]
-            elif expect_rettype.startswith('uint'):
-
-                uint_candidates = []
-                for i in candidates:
-                    i = self.functions[i]
-                    if i.rettype in ['uint', 'uint8', 'uint16', 'uint32', 'uint64']:
-                        uint_candidates.append(i)
-
-                if len(uint_candidates) > 1:
-                    raise Exception("Too many candidates for " + name)
-                elif len(uint_candidates) == 0:
-                    raise Exception("No function matches requested " + name)
-                else:
-                    f = uint_candidates[0]
-            elif expect_rettype.startswith('float'):
-
-                float_candidates = []
-                for i in candidates:
-                    i = self.functions[i]
-                    if i.rettype.startswith('float'):
-                        float_candidates.append(i)
-
-                if len(float_candidates) > 1:
-                    raise Exception("Too many candidates for " + name)
-                elif len(float_candidates) == 0:
-                    raise Exception("No function matches requested " + name)
-                else:
-                    f = float_candidates[0]
-            raise Exception("Function not found " + s)
+        if not s in self.functions.keys():
+            raise Exception("Did not find function '" + name + '\' accepting arguments ' + str(argtypes))
         else:
-            f = self.functions[s_r]
+            f = self.functions[s]
 
-        return f.call(environment, argvals)
+        return f
 
 class KyazukenDocument:
     def __init__(self, entry = None):
@@ -450,7 +494,7 @@ def elaborate_ast(ast):
 
     for i in ast:
         if type(i) == Function:
-            if i.signature() in ['_Z4mainEPp6StringR4void', '_Z4mainEPp6StringR5int32', '_Z4mainEPR4void']:
+            if i.signature() in ['_Z4mainEPp6String', '_Z4mainEPp6String', '_Z4mainEP']:
                 # main function
                 doc.entry = i
             else:
