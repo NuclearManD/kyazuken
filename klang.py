@@ -13,6 +13,49 @@ class KyazukenObject:
     def resolve(self):
         return self._val
 
+class ImportStatement:
+    def __init__(self, path):
+        self.path = path
+
+class Store:
+    def __init__(self, name, expr):
+        self.name = name
+        self.expr = expr
+    def execute(self, context):
+        t, v = self.expr.eval(context)
+        context.setvar(self.name, v)
+
+class Constructor:
+    def __init__(self, name, args, statements):
+        self.name = name
+        self.args = args
+        self.statements = statements
+    def signature(self):
+        s = '_Z' + str(len(self.name)) + self.name + 'C1E'
+        s += 'P'
+        for i in self.args:
+            i = i.type
+
+            if type(i) == ArrayType:
+                s += 'p' + str(len(i.basetype)) + i.basetype
+            else:
+                s += str(len(i)) + i
+
+        s += 'R' + str(len(self.rettype)) + self.rettype
+
+        return s
+
+    def call(self, environment, arguments):
+
+        argdict = {}
+        for i in self.args:
+            argdict[i.name] = arguments.pop(0)
+
+        context = Context(environment, argdict)
+        for i in self.statements:
+            i.execute(context)
+        
+
 class Literal:
     def __init__(self, _type: str, value):
         self.type = _type
@@ -50,6 +93,20 @@ class WhileBlock:
         self.condition = condition
         self.lines = lines
 
+class IterForBlock:
+    def __init__(self, vardec, iterable, lines):
+        self.vardec = vardec
+        self.iterable = iterable
+        self.lines = lines
+    def execute(self, context):
+        et, ev = self.iterable.eval(context)
+        while True:
+            val = ev.iter()
+            if val == None:
+                return
+
+            mini_context = Context(context, {self.vardec.name: val})
+
 class ExitBlock:
     def __init__(self, code):
         self.code = code
@@ -67,6 +124,35 @@ class VariableDeclaration:
     def __init__(self, name, _type):
         self.name = name
         self.type = _type
+
+class VariableDefinition:
+    def __init__(self, name, _type, value_expr):
+        self.name = name
+        self.type = _type
+        self.expr = value_expr
+
+class Subscript:
+    def __init__(self, src, idx):
+        self.src = src
+        self.idx = idx
+
+    def eval(self, context):
+        st, sv = self.src.eval(context)
+        it, iv = self.idx.eval(context)
+
+        if not it.startswith('int'):
+            raise Exception("Failed: attempted subscript of " + str(self.src) + ' using type ' + str(it))
+
+        return sv[iv]
+
+    def assign(self, context, _type, val):
+        st, sv = self.src.eval(context)
+        it, iv = self.idx.eval(context)
+
+        if not it.startswith('int'):
+            raise Exception("Failed: attempted subscript of " + str(self.src) + ' using type ' + str(it))
+
+        return sv.assign_idx(context, iv, _type, val)
 
 class Variable:
     def __init__(self, name):
@@ -105,6 +191,49 @@ class BinOp:
         else:
             raise Exception("Invalid operation")
 
+class UniOp:
+    def __init__(self, left, op):
+        self.left = left
+        self.op = op
+    def eval(self, context):
+        et, ev = self.left.eval(context)
+
+        if self.op == '!':
+            ev = not ev
+        elif self.op == '-':
+            ev = -ev
+        elif self.op == '--':
+            ev = ev - 1
+        elif self.op == '++':
+            ev = ev + 1
+
+        if self.op == '++' or self.op == '--':
+            self.left.assign(context, et, ev)
+
+        return et, ev
+
+class Return:
+    def __init__(self, val = None):
+        self.val = val
+    def execute(self, context):
+        if self.val != None:
+            return self.val.eval(context)
+        else:
+            return None, None
+
+class Member:
+    def __init__(self, src, sub):
+        self.src = src
+        self.sub = sub
+    def eval(self, context):
+        et, ev = self.src.eval(context)
+
+        return ev.sub(self.sub)
+    def assign(self, context, _type, val):
+        et, ev = self.src.eval(context)
+
+        ev.assign_sub(context, self.sub, _type, val)
+
 class Function:
     def __init__(self, name, rettype, args, statements):
         self.name = name
@@ -135,6 +264,73 @@ class Function:
         context = Context(environment, argdict)
         for i in self.statements:
             i.execute(context)
+
+class ClassDefinition:
+    def __init__(self, name, items):
+        self.name = name
+        con = []
+        func = []
+        var = []
+        for i in items:
+            if isinstance(i, VariableDeclaration):
+                var.append(i)
+            elif isinstance(i, Constructor):
+                if i.name != name:
+                    raise ValueError("Constructor name is {} but class name is {}".format(i.name, name))
+                con.append(i)
+            elif isinstance(i, Function):
+                i.args.insert(0, VariableDeclaration('this', ObjectType(name)))
+                func.append(i)
+        self.con = con
+        self.func = func
+        self.vars = var
+        self.compiled = False
+
+    def __str__(self):
+        s = 'class ' + self.name + ' {\n'
+        for i in self.vars:
+            s += '\t' + str(i) + ';\n'
+        s += '\n'
+        for i in self.con:
+            s += '\t' + str(i) + '\n'
+        s += '\n'
+        for i in self.func:
+            s += '\t' + str(i) + '\n'
+        return s + '}\n'
+
+class ClassInheriting:
+    def __init__(self, name, items, inherited):
+        self.name = name
+        con = []
+        func = []
+        var = []
+        for i in items:
+            if isinstance(i, VariableDeclaration):
+                var.append(i)
+            elif isinstance(i, Constructor):
+                if i.name != name:
+                    raise ValueError("Constructor name is {} but class name is {}".format(i.name, name))
+                con.append(i)
+            elif isinstance(i, Function):
+                i.args.insert(0, VariableDeclaration('this', ObjectType(name)))
+                func.append(i)
+        self.con = con
+        self.func = func
+        self.vars = var
+        self.inherited = inherited
+        self.compiled = False
+
+    def __str__(self):
+        s = 'class ' + self.name + ' extends ' + self.inherited + ' {\n'
+        for i in self.vars:
+            s += '\t' + str(i) + ';\n'
+        s += '\n'
+        for i in self.con:
+            s += '\t' + str(i) + '\n'
+        s += '\n'
+        for i in self.func:
+            s += '\t' + str(i) + '\n'
+        return s + '}\n'
 
 
 class PyFunctionWrapper(Function):

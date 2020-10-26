@@ -19,8 +19,12 @@ class Lexer():
         # Other reserved words
         self.lexer.add('IF', r'if')
         self.lexer.add('WHILE', r'while')
+        self.lexer.add('FOR', r'for')
         self.lexer.add('CLASS', r'class')
         self.lexer.add('MUTABLE', r'mutable')
+        self.lexer.add('PUBLIC', r'public')
+        self.lexer.add('PRIVATE', r'private')
+        self.lexer.add('IMPORT', r'\bimport\b')
 
         self.lexer.add('RETURN', r'return')
         self.lexer.add('EXTENDS', r'extends')
@@ -64,8 +68,12 @@ class Lexer():
         self.lexer.add('EQ', r'\=')
         self.lexer.add('MOD', r'\%')
         self.lexer.add('MEMBER', r'\.')
+        self.lexer.add('NOT', r'\!')
         # the rest
         self.lexer.add('COLON', r'\:')
+        # Ignore comments
+        self.lexer.ignore(r'\/\*.*\*\/')
+        self.lexer.ignore(r'\/\/.*(\n|\r)')
         # Ignore spaces
         self.lexer.ignore('\s+')
 
@@ -82,8 +90,8 @@ class Parser:
             # A list of all token names accepted by the parser.
             ['INTEGER', 'NAME', 'OPEN_PAREN', 'CLOSE_PAREN', 'INTTYPE', 'MEMBER', 'FLOATTYPE',
              'OPEN_CURLY', 'CLOSE_CURLY', 'VOID', "STRING", 'STRINGTYPE', 'OPEN_BRACKET', 'CLOSE_BRACKET',
-             'IF', 'WHILE', 'RETURN', 'COLON', 'CLASS', 'EXTENDS', 'MUTABLE',
-             'DOUBLE', 'BOOL', 'CHAR',
+             'IF', 'WHILE', 'RETURN', 'COLON', 'CLASS', 'EXTENDS', 'MUTABLE', 'NOT',
+             'DOUBLE', 'BOOL', 'CHAR', 'IMPORT', 'PUBLIC', 'PRIVATE', 'FOR',
              'SEMICOLON', 'COMMA', 'EQ'] + OP_NAMES,
             precedence = [
                 ('left', ['IF', 'COLON', 'ELSE', 'END', 'WHILE',]),
@@ -112,6 +120,7 @@ class Parser:
 
         @self.pg.production('toplevel : func')
         @self.pg.production('toplevel : class')
+        @self.pg.production('toplevel : import')
         def toplevel(p):
             return p[0]
 
@@ -124,12 +133,28 @@ class Parser:
             return ClassInheriting(p[1].getstr(), p[5], p[3].getstr())
 
         @self.pg.production('class : MUTABLE CLASS NAME OPEN_CURLY class_li CLOSE_CURLY')
-        def class_def(p):
+        def class_def_mutable(p):
             return ClassDefinition(p[1].getstr(), p[3])
 
         @self.pg.production('class : MUTABLE CLASS NAME EXTENDS NAME OPEN_CURLY class_li CLOSE_CURLY')
-        def class_inherit(p):
+        def class_inherit_mutable(p):
             return ClassInheriting(p[1].getstr(), p[5], p[3].getstr())
+
+        @self.pg.production('import : IMPORT import_path SEMICOLON')
+        def import_statement(p):
+            return ImportStatement(p[1])
+
+        @self.pg.production('import_path : import_path MEMBER NAME')
+        def import_path_ext(p):
+            return p[0] + '/' + p[2].getstr()
+
+        @self.pg.production('import_path : NAME')
+        def import_path_name_only(p):
+            return p[0].getstr()
+
+        @self.pg.production('import_path : MEMBER NAME')
+        def import_path_name_local(p):
+            return './' + p[1].getstr()
 
         @self.pg.production('statement : COLON OPEN_PAREN expr_li CLOSE_PAREN SEMICOLON')
         def superconstructor(p):
@@ -141,12 +166,17 @@ class Parser:
         def class_list_1(p):
             return []
 
-        @self.pg.production('class_li : class_li func')
-        @self.pg.production('class_li : class_li constructor')
+        @self.pg.production('class_li : class_li scope func')
+        @self.pg.production('class_li : class_li scope constructor')
         @self.pg.production('class_li : class_li var_dec SEMICOLON')
         @self.pg.production('class_li : class_li var_dec_eq SEMICOLON')
         def class_list_2(p):
             return p[0] + [p[1]]
+
+        @self.pg.production('scope : PUBLIC')
+        @self.pg.production('scope : PRIVATE')
+        def scope(p):
+            return p[0].getstr()
 
         @self.pg.production('name_li : NAME')
         def statement_list_1(p):
@@ -190,6 +220,12 @@ class Parser:
             x.lineinfo = p[0].getsourcepos()
             return x
 
+        @self.pg.production('statement : FOR OPEN_PAREN var_dec COLON expression CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
+        def iterator_for_block(p):
+            x = IterForBlock(p[2], p[4], p[7])
+            x.lineinfo = p[0].getsourcepos()
+            return x
+
         @self.pg.production('statement : WHILE expression OPEN_CURLY statement_li CLOSE_CURLY')
         def while_loop(p):
             x = WhileLoop(p[1], p[3])
@@ -197,13 +233,13 @@ class Parser:
             return x
 
         @self.pg.production('statement : RETURN expression SEMICOLON')
-        def expression_assign_var(p):
+        def return_expr(p):
             x = Return(p[1])
             x.lineinfo = p[0].getsourcepos()
             return x
 
         @self.pg.production('statement : RETURN SEMICOLON')
-        def expression_assign_var(p):
+        def return_void(p):
             x = Return()
             x.lineinfo = p[0].getsourcepos()
             return x
@@ -266,6 +302,7 @@ class Parser:
         @self.pg.production('expression : INC assignable')
         @self.pg.production('expression : DEC assignable')
         @self.pg.production('expression : SUB expression')
+        @self.pg.production('expression : NOT expression')
         def onearg_expr(p):
             return UniOp(p[1], p[0].getstr())
 
@@ -343,16 +380,16 @@ class Parser:
 
         @self.pg.error
         def error_handle(token):
-            print(token.getsourcepos())
+            src = token.getsourcepos()
+            print("Syntax error on line " + str(src.lineno))
             raise ValueError(token)
-
 
     def get_parser(self):
         return self.pg.build()
 
 kprintln = PyFunctionWrapper('println', 'void', [VariableDeclaration('s', 'String')], print)
 
-f = open('test.kya')
+f = open('kyac/main.k')
 
 print('Lex...')
 lexer = Lexer().get_lexer()
