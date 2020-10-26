@@ -420,6 +420,6 @@ document = elaborate_ast(ast)
 print('Execute:')
 
 try:
-    document.execute(KyazukenEnvironment({'_Z7printlnEP6String':kprintln}))
+    document.execute(KyazukenEnvironment({'_Z7printlnEP6String':kprintln}), ['kyac', 'kyac/main.k'])
 except KyazukenError as e:
     sys.stderr.write("Error: " + str(e) + '\n')

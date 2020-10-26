@@ -490,9 +490,9 @@ class KyazukenDocument:
         self.functions = {}
         self.classes = {}
         self.entry = None
-    def execute(self, environment):
+    def execute(self, environment, argv = []):
         if len(self.entry.args) == 1:
-            self.entry.call(environment, [ArrayObject('String', [])])
+            self.entry.call(environment, [ArrayObject('String', argv)])
         else:
             self.entry.call(environment, [])
 
