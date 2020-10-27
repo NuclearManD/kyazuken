@@ -1,3 +1,4 @@
+from kenvironment import elaborate_ast
 from klang import *
 
 from rply import LexerGenerator
