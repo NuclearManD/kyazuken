@@ -1,6 +1,4 @@
 
-import fileio;
-
 import .lexer;
 import .parser;
 import .language;

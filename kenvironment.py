@@ -27,6 +27,7 @@ class KyazukenDocument:
         self.functions = {}
         self.classes = {}
         self.entry = None
+        self.imports = []
     def execute(self, environment, argv = []):
         if len(self.entry.args) == 1:
             self.entry.call(environment, [ArrayObject('String', argv)])
@@ -45,17 +46,5 @@ class KyazukenDocument:
         # Create the environment
         return KyazukenEnvironment(functions, self.classes)
 
-def elaborate_ast(ast):
-    doc = KyazukenDocument()
-
-    for i in ast:
-        if type(i) == Function:
-            if i.signature() in ['_Z4mainEPp6String', '_Z4mainEPp6String', '_Z4mainEP']:
-                # main function
-                doc.entry = i
-            else:
-                doc.functions[i.signature()] = i
-        elif type(i) in [ClassDefinition, ClassInheriting]:
-            doc.classes[i.name] = i
-
-    return doc
+    def add_imported_document(self, imported):
+        self.imports.append(imported)

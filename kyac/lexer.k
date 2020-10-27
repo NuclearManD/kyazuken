@@ -1,15 +1,13 @@
 
-import stream;
-
 class Lexer {
 
-	IStream file;
+	File file;
 
 	String buffer = "";
 	int line_number = 0;
 	
 
-	Lexer(IStream file) {
+	Lexer(File file) {
 		this.file = file;
 	}
 

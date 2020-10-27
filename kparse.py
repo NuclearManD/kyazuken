@@ -1,9 +1,10 @@
-from kenvironment import elaborate_ast
 from klang import *
+from kenvironment import KyazukenDocument
 
 from rply import LexerGenerator
 from rply import ParserGenerator
 
+import os
 import sys
 
 class Lexer():
@@ -406,20 +407,64 @@ class Parser:
     def get_parser(self):
         return self.pg.build()
 
-f = open('kyac/main.k')
+def parse_ast(filename):
+    print("Parsing " + filename)
 
-print('Lex...')
-lexer = Lexer().get_lexer()
-tokens = lexer.lex(f.read())
+    f = open(filename)
+    lexer = Lexer().get_lexer()
+    tokens = lexer.lex(f.read())
 
-print('Parse...')
-pg = Parser()
-pg.parse()
-parser = pg.get_parser()
-ast = parser.parse(tokens)
+    pg = Parser()
+    pg.parse()
+    parser = pg.get_parser()
+    return parser.parse(tokens)
+
+FILE_EXTENTIONS = ['.kya', '.k']
+
+def elaborate_ast(ast, filename, docs = None):
+    doc = KyazukenDocument()
+
+    root_path = os.path.dirname(filename)
+
+    if docs == None:
+        docs = {filename: doc}
+
+    all_statements = ast.copy()
+
+    for i in ast:
+        if type(i) == ImportStatement:
+            path = i.path.replace('.', root_path)
+
+            for j in FILE_EXTENTIONS:
+                if os.path.exists(path + j):
+                    path += j
+                    break
+
+            if not '.' in path.split('/')[-1]:
+                print("Error: Could not import " + path.replace('.', '').replace('/', '.'))
+            else:
+                ast = parse_ast(path)
+                imported_doc = elaborate_ast(ast, path, docs)[0]
+                doc.add_imported_document(imported_doc)
+
+    for i in ast:
+        if type(i) == Function:
+            if i.signature() in ['_Z4mainEPp6String', '_Z4mainEPp6String', '_Z4mainEP']:
+                # main function
+                doc.entry = i
+            else:
+                doc.functions[i.signature()] = i
+        elif type(i) in [ClassDefinition, ClassInheriting]:
+            doc.classes[i.name] = i
+
+    return doc, docs
+
+filename = 'kyac/main.k'
+
+ast = parse_ast(filename)
 
 print('Elaborate...')
-document = elaborate_ast(ast)
+document = elaborate_ast(ast, filename)
 
 print('Execute:')
 
