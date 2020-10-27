@@ -66,7 +66,7 @@ class Store:
         self.expr = expr
     def execute(self, context):
         t, v = self.expr.eval(context)
-        context.setvar(self.name, v)
+        context.setvar(self.name, t, v)
 
 class Constructor:
     def __init__(self, name, args, statements):
@@ -79,10 +79,12 @@ class Constructor:
     def call(self, environment, arguments):
 
         argdict = {}
+        argtypes = {}
         for i in self.args:
             argdict[i.name] = arguments.pop(0)
+            argtypes[i.name] = i.type
 
-        context = Context(environment, argdict)
+        context = Context(environment, argtypes, argdict)
         for i in self.statements:
             i.execute(context)
 
@@ -196,7 +198,7 @@ class IterForBlock:
             if val == None:
                 return
 
-            mini_context = Context(context, {self.vardec.name: val})
+            mini_context = Context(context, {self.vardec.name: self.vardec.type}, {self.vardec.name: val})
 
             v = self.statement.execute(context)
             if v != None:
@@ -255,7 +257,7 @@ class VariableDefinition:
 
         if t != self.type:
             raise KyazukenError('Attempted to assign a ' + str(t) + ' to new variable of type ' + str(self.type))
-        context.mkvar(self.name, v)
+        context.mkvar(self.name, t, v)
 
 class Subscript:
     def __init__(self, src, idx):
@@ -285,7 +287,7 @@ class Variable:
         self.name = name
 
     def eval(self, context):
-        return '', context.getvar(self.name)
+        return context.getvar(self.name)
 
     def get_function(self, context, argtypes):
         return context.get_function(self.name, argtypes)
@@ -396,10 +398,12 @@ class Function:
     def call(self, environment, arguments):
 
         argdict = {}
+        argtypes = {}
         for i in self.args:
             argdict[i.name] = arguments.pop(0)
+            argtypes[i.name] = i.type
 
-        context = Context(environment, argdict)
+        context = Context(environment, argtypes, argdict)
         for i in self.statements:
             i.execute(context)
 
@@ -488,20 +492,27 @@ class PyFunctionWrapper(Function):
         return self.rettype, self.f(*args)
 
 class Context:
-    def __init__(self, env, var):
+    def __init__(self, env, var_types, var):
         self.vars = var
+        self.var_types = var_types
         self.env = env
 
     def getvar(self, name):
-        return self.vars[name]
+        return self.var_types[name], self.vars[name]
 
-    def setvar(self, name, val):
+    def setvar(self, name, _type, val):
         if not name in self.vars.keys():
             raise KyazukenError('Variable ' + name + ' does not exist.')
+
+        if self.var_types[name] != _type:
+            msg = f'Attempted to assign value of type {_type} to variable of type {self.var_types[name]}'
+            raise KyazukenError(msg)
+
         self.vars[name] = val
 
-    def mkvar(self, varname, value):
+    def mkvar(self, vartype, varname, value):
         self.vars[varname] = value
+        self.var_types[name] = vartype
 
     def get_function(self, name, argtypes):
         return self.env.get_function(name, argtypes)
