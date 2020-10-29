@@ -20,8 +20,10 @@ class Lexer {
 		while (buffer.length() == 0 || buffer.isspace()) {
 			buffer = file.readline();
 			line_no++;
-			if (buffer.length() == 0)
-				return -1, null;
+			if (buffer.length() == 0) {
+				last_index = -1;
+				return null;
+			}
 
 			buffer.strip();
 		}
