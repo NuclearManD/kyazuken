@@ -221,11 +221,11 @@ class KyazukenParser:
         @self.pg.production('overload : NAME OPERATOR uniop OPEN_PAREN CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
         @self.pg.production('overload : NAME OPERATOR COLON OPEN_PAREN CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
         def uniop_overload(p):
-            return OperatorOverload(p[2].getstr(), p[0].getstr())
+            return OperatorOverload(p[2].getstr(), p[0].getstr(), p[6])
 
         @self.pg.production('overload : NAME OPERATOR dualop OPEN_PAREN var_dec CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
         def dualop_overload(p):
-            return OperatorOverload(p[2].getstr(), p[0].getstr(), p[4])
+            return OperatorOverload(p[2].getstr(), p[0].getstr(), p[4], p[6])
 
         @self.pg.production('expression : NEW NAME OPEN_PAREN expr_li CLOSE_PAREN')
         def new_object(p):
