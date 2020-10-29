@@ -129,12 +129,15 @@ class ImportStatement:
         self.path = path
 
 class Store:
-    def __init__(self, name, expr):
-        self.name = name
+    def __init__(self, obj, expr):
+        self.obj = obj
         self.expr = expr
+
     def execute(self, context):
         t, v = self.expr.eval(context)
-        context.setvar(self.name, t, v)
+
+        return self.obj.assign(context, t, v)
+    
 
 class Constructor:
     def __init__(self, name, args, statements):
@@ -388,6 +391,9 @@ class Variable:
     def get_function(self, context, argtypes):
         return context.get_function(self.name, argtypes)
 
+    def assign(self, context, _type, val):
+        return context.setvar(self.name, _type, val)
+
 class BinOp:
     def __init__(self, left, op, right):
         self.left = left
@@ -631,11 +637,14 @@ class Context:
         self.env = env
 
     def getvar(self, name):
+        if not name in self.vars.keys():
+            raise KyazukenError('Variable \'' + name + '\' does not exist.')
+
         return self.var_types[name], self.vars[name]
 
     def setvar(self, name, _type, val):
         if not name in self.vars.keys():
-            raise KyazukenError('Variable ' + name + ' does not exist.')
+            raise KyazukenError('Variable \'' + name + '\' does not exist.')
 
         if self.var_types[name] != _type:
             msg = f'Attempted to assign value of type {_type} to variable of type {self.var_types[name]}'

@@ -574,8 +574,10 @@ document, documents, errors = elaborate_ast(ast, filename)
 if errors == 0:
     print('Execute:')
 
+    env = document.make_default_env()
+
     try:
-        document.execute(document.make_default_env(), ['kyac', 'kyac/main.k'])
+        document.execute(env, ['kyac', 'kyac/main.k'])
     except KyazukenError as e:
         sys.stderr.write("Error: " + str(e) + '\n')
 else:
