@@ -42,7 +42,7 @@ class Parser {
 				
 				if (token != "class")
 					syntax_error("Unexpected token in class definition '" + token + "'");
-				
+			}
 		}
 	}
 
