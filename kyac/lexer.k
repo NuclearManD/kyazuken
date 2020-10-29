@@ -5,7 +5,7 @@ class Lexer {
 
 	String buffer = "";
 	int line_number = 0;
-	
+	int last_index = -1;
 
 	public Lexer(File file) { // line 10
 		this.file = file;
@@ -16,7 +16,7 @@ class Lexer {
 		return get_next_token();
 	}
 
-	private (int, String) _raw_next_token() {
+	private String _raw_next_token() {
 		while (buffer.length() == 0 || buffer.isspace()) {
 			buffer = file.readline();
 			line_no++;
@@ -78,29 +78,26 @@ class Lexer {
 				}
 			}
 		}
-		return tmp, i
+
+		last_index = i;
+		return tmp;
 		
 	}
 
 	public String get_next_token() {
-		int i;
 		String token;
 
-		i, token = _raw_next_token();
+		token = _raw_next_token();
 
-		if (i > 0) {
-			buffer = buffer.substring(i);
+		if (last_index > 0) {
+			buffer = buffer.substring(last_index);
 		}
 
 		return token;
 	}
 
 	public String peek_next_token() {
-		String token;
-
-		// Yes the following is correct syntax
-		// The comma with nothing preceding indicates the first value is not used
-		, token = _raw_next_token();
+		String token = _raw_next_token();
 
 		return token;
 	}
