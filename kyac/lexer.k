@@ -7,7 +7,7 @@ class Lexer {
 	int line_number = 0;
 	
 
-	Lexer(File file) {
+	public Lexer(File file) { // line 10
 		this.file = file;
 	}
 

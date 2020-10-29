@@ -90,8 +90,8 @@ class Lexer():
 OP_NAMES = ['SUM', 'SUB', 'MUL', 'DIV', 'OR', 'AND', 'XOR', 'MOD',
             '==', '!=', '<=', '>=', '<', '>', 'INC', 'DEC', '||', '&&', '^^']
 
-class Parser:
-    def __init__(self):
+class KyazukenParser:
+    def __init__(self, file):
         self.pg = ParserGenerator(
             # A list of all token names accepted by the parser.
             ['INTEGER', 'NAME', 'OPEN_PAREN', 'CLOSE_PAREN', 'INTTYPE', 'MEMBER', 'FLOATTYPE',
@@ -115,6 +115,8 @@ class Parser:
                 ('left', ['NAME', 'INTEGER', 'DOUBLE', 'STRINGTYPE', 'BOOL']),
             ]
         )
+
+        self.path = file
 
     def parse(self):
         @self.pg.production('program : toplevel')
@@ -401,7 +403,7 @@ class Parser:
         @self.pg.error
         def error_handle(token):
             src = token.getsourcepos()
-            print("Syntax error on line " + str(src.lineno))
+            print("Syntax error at " + self.path + ':' + str(src.lineno))
             raise ValueError(token)
 
     def get_parser(self):
@@ -414,7 +416,7 @@ def parse_ast(filename):
     lexer = Lexer().get_lexer()
     tokens = lexer.lex(f.read())
 
-    pg = Parser()
+    pg = KyazukenParser(filename)
     pg.parse()
     parser = pg.get_parser()
     return parser.parse(tokens)
