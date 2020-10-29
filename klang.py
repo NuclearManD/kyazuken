@@ -218,7 +218,7 @@ class IfBlock:
     def execute(self, context):
         et, ev = self.condition.eval(context)
         if et != 'bool':
-            raise KyazukenError('Invalid expression for if block')
+            raise KyazukenError('Invalid expression for if block: must evaluate to a bool')
         if ev:
             return self.statement.execute(context)
 
@@ -231,7 +231,7 @@ class IfElseBlock:
     def execute(self, context):
         et, ev = self.condition.eval(context)
         if et != 'bool':
-            raise KyazukenError('Invalid expression for if block')
+            raise KyazukenError('Invalid expression for if/else block: must evaluate to a bool')
         if ev:
             return self.statement.execute(context)
         else:
@@ -246,7 +246,7 @@ class WhileBlock:
             et, ev = self.iterable.eval(context)
 
             if et != 'bool':
-                raise KyazukenError('Invalid expression for if block')
+                raise KyazukenError('Invalid expression for while block: must evaluate to a bool')
             if not ev:
                 break
 
@@ -268,9 +268,37 @@ class IterForBlock:
 
             mini_context = Context(context, {self.vardec.name: self.vardec.type}, {self.vardec.name: val})
 
-            v = self.statement.execute(context)
+            v = self.statement.execute(mini_context)
             if v != None:
                 return v
+
+class CForBlock:
+    def __init__(self, loop_init, loop_condition, loop_end, loop_code):
+        self.loop_init = loop_init
+        self.loop_condition = loop_condition
+        self.loop_end = loop_end
+        self.loop_code = loop_code
+    def execute(self, context):
+
+        loop_context = Context(context, {}, {})
+
+        v = self.loop_init(loop_context)
+        if v != None:
+            return v
+        
+        while True:
+            et, ev = self.loop_condition.eval(loop_context)
+
+            if et != 'bool':
+                raise KyazukenError('Invalid expression for a for block: must evaluate to a bool')
+            if not ev:
+                break
+
+            v = self.loop_code.execute(loop_context)
+            if v != None:
+                return v
+
+            self.loop_end.eval(loop_context)
 
 class ExitBlock:
     def __init__(self, code):
@@ -455,6 +483,10 @@ class Return:
             return self.val.eval(context)
         else:
             return None, None
+
+class NoOperation:
+    def execute(self, context):
+        return None, None
 
 class Member:
     def __init__(self, src, sub):

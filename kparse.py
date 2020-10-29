@@ -36,7 +36,7 @@ class Lexer():
         self.lexer.add('EXTENDS', r'\bextends\b')
 
         self.lexer.add('NEW', r'\bnew\b')
-        
+
         # Name of function or variable
         self.lexer.add('NAME', r'[a-zA-Z_$][a-zA-Z_$0-9]*')
         # Number
@@ -281,6 +281,12 @@ class KyazukenParser:
             x.lineinfo = p[0].getsourcepos()
             return x
 
+        @self.pg.production('statement : FOR OPEN_PAREN statement expression SEMICOLON expression CLOSE_PAREN statement')
+        def iterator_for_block(p):
+            x = CForBlock(p[2], p[3], p[5], p[7])
+            x.lineinfo = p[0].getsourcepos()
+            return x
+
         @self.pg.production('statement : WHILE OPEN_PAREN expression CLOSE_PAREN statement')
         def while_loop(p):
             x = WhileBlock(p[2], p[4])
@@ -302,6 +308,10 @@ class KyazukenParser:
             x = Return()
             x.lineinfo = p[0].getsourcepos()
             return x
+
+        @self.pg.production('statement : SEMICOLON')
+        def empty_statement(p):
+            return NoOperation()
 
         @self.pg.production('dec_list : var_dec')
         def dec_list_1(p):
