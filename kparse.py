@@ -59,6 +59,8 @@ class Lexer():
         self.lexer.add('==', '==')
         self.lexer.add('>=', '>=')
         self.lexer.add('<=', '<=')
+        self.lexer.add('++', '[+][+]')
+        self.lexer.add('--', '[-][-]')
         self.lexer.add('+=', '[+]=')
         self.lexer.add('-=', '[-]=')
         self.lexer.add('*=', '[*]=')
@@ -72,8 +74,6 @@ class Lexer():
         self.lexer.add('^^', r'\^\^')
         self.lexer.add('&&', r'\&\&')
         self.lexer.add('||', r'\|\|')
-        self.lexer.add('INC', r'\+\+')
-        self.lexer.add('DEC', r'\-\-')
         self.lexer.add('SUM', r'\+')
         self.lexer.add('SUB', r'\-')
         self.lexer.add('MUL', r'\*')
@@ -98,8 +98,8 @@ class Lexer():
         return self.lexer.build()
 
 OP_NAMES = ['SUM', 'SUB', 'MUL', 'DIV', 'OR', 'AND', 'XOR', 'MOD',
-            '==', '!=', '<=', '>=', '<', '>', 'INC', 'DEC', '||', '&&', '^^',
-            '+=', '-=', '*=', '/=', '<<', '>>', '<<=', '>>=']
+            '==', '!=', '<=', '>=', '<', '>', '||', '&&', '^^',
+            '+=', '-=', '*=', '/=', '<<', '>>', '<<=', '>>=', '++', '--']
 
 class KSyntaxError(Exception):
     def __init__(self, token):
@@ -126,7 +126,7 @@ class KyazukenParser:
                 ('left', ['SUM', 'SUB',]),
                 ('left', ['MUL', 'DIV', 'MOD']),
                 ('left', ['AND', 'OR', 'XOR']),
-                ('left', ['INC', 'DEC']),
+                ('left', ['++', '--']),
                 ('left', ['POUND']),
                 ('left', ['OPEN_BRACKET','CLOSE_BRACKET', 'COMMA']),
                 ('left', ['MEMBER']),
@@ -222,12 +222,16 @@ class KyazukenParser:
         def func(p):
             return Function(p[1].getstr(), p[0], p[3], p[6])
 
+        
+
         @self.pg.production('constructor : NAME OPEN_PAREN dec_list CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
         def constructor(p):
             return Constructor(p[0].getstr(), p[2], p[5])
 
         @self.pg.production('overload : type OPERATOR uniop OPEN_PAREN CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
         @self.pg.production('overload : type OPERATOR COLON OPEN_PAREN CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
+        @self.pg.production('overload : type OPERATOR ++ OPEN_PAREN CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
+        @self.pg.production('overload : type OPERATOR -- OPEN_PAREN CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
         def uniop_overload(p):
             return OperatorOverload(p[2].getstr(), p[0], p[6])
 
@@ -323,6 +327,16 @@ class KyazukenParser:
         def assignable_to_expr(p):
             return p[0]
 
+        @self.pg.production('expression : ++ assignable')
+        @self.pg.production('expression : -- assignable')
+        def pre_inc_dec(p):
+            return PreIncDec(p[1], p[0].getstr())
+
+        @self.pg.production('expression : assignable ++')
+        @self.pg.production('expression : assignable --')
+        def post_inc_dec(p):
+            return PostIncDec(p[0], p[1].getstr())
+
         @self.pg.production('assignable : expression OPEN_BRACKET expression CLOSE_BRACKET')
         def subscript(p):
             return Subscript(p[0], p[2])
@@ -366,8 +380,6 @@ class KyazukenParser:
         def dualop(p):
             return p[0]
 
-        @self.pg.production('uniop : INC')
-        @self.pg.production('uniop : DEC')
         @self.pg.production('uniop : SUB')
         @self.pg.production('uniop : NOT')
         def uniop(p):

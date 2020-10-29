@@ -399,6 +399,8 @@ class UniOp:
     def __init__(self, left, op):
         self.left = left
         self.op = op
+        assert op in ['!', '-']
+
     def eval(self, context):
         et, ev = self.left.eval(context)
 
@@ -406,15 +408,42 @@ class UniOp:
             ev = not ev
         elif self.op == '-':
             ev = -ev
-        elif self.op == '--':
+
+        return et, ev
+
+class PreIncDec:
+    def __init__(self, obj, op):
+        self.obj = obj
+        self.op = op
+        assert op in ['++', '--']
+
+    def eval(self, context):
+        et, ev = self.obj.eval(context)
+
+        if self.op == '--':
             ev = ev - 1
         elif self.op == '++':
             ev = ev + 1
-        else:
-            raise KyazukenError("Invalid operation: " + self.op + ' ' + str(et))
 
-        if self.op == '++' or self.op == '--':
-            self.left.assign(context, et, ev)
+        self.obj.assign(context, et, ev)
+
+        return et, ev
+
+class PostIncDec:
+    def __init__(self, obj, op):
+        self.obj = obj
+        self.op = op
+        assert op in ['++', '--']
+
+    def eval(self, context):
+        et, ev = self.obj.eval(context)
+
+        if self.op == '--':
+            evn = ev - 1
+        elif self.op == '++':
+            evn = ev + 1
+
+        self.obj.assign(context, et, evn)
 
         return et, ev
 
