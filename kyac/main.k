@@ -1,7 +1,7 @@
 
 import .lexer;
 import .parser;
-import .language;
+//import .language;
 
 // This class combines the functionality of the lexer, parser, code accumulator, compilation, and optimization.
 class CodeBuilder {

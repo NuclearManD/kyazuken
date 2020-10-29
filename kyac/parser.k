@@ -1,7 +1,7 @@
 
-import fileio;
+//import fileio;
 
-import .language;
+//import .language;
 
 class Parser {
 

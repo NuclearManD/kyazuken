@@ -31,7 +31,10 @@ class Lexer {
 		String tmp = "";
 		bool instr = false;
 		bool inch = false;
-		for (int i = 0; i < buffer.length(); i++) {
+
+		int i;
+
+		for (i = 0; i < buffer.length(); i++) {
 			char c = buffer[i];
 			if (instr) {
 				// process string stuff
