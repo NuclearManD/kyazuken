@@ -619,9 +619,7 @@ class ClassInheriting(ClassDefinition):
 
 class PyFunctionWrapper(Function):
     def __init__(self, name, rettype, args, f):
-        self.name = name
-        self.rettype = rettype
-        self.args = args
+        super().__init__(name, rettype, args, None)
         self.f = f
     def call(self, env, args):
         return self.rettype, self.f(*args)
