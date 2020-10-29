@@ -1,4 +1,59 @@
 
+op_to_opname = {
+    '+' : 'ps',
+    '-' : 'ng',
+    '&' : 'ad',
+    '*' : 'de',
+    '~' : 'co',
+    '/' : 'dv',
+    '%' : 'rm',
+    '|' : 'or',
+    '^' : 'eo',
+    '=' : 'aS',
+    '+=' : 'pL',
+    '-=' : 'mI',
+    '*=' : 'mL',
+    '/=' : 'dV',
+    '%=' : 'rM',
+    '&=' : 'aN',
+    '|=' : 'oR',
+    '^=' : 'eO',
+    '<<' : 'ls',
+    '>>' : 'rs',
+    '<<=' : 'lS',
+    '>>=' : 'rS',
+    '==' : 'eq',
+    '<' : 'lt',
+    '>' : 'gt',
+    '<=' : 'le',
+    '>=' : 'ge',
+    '!=' : 'ne',
+    '!' : 'nt',
+    '&&' : 'aa',
+    '||' : 'oo',
+    '++' : 'pp',
+    '--' : 'mm',
+    ',' : 'cm',
+    '()' : 'cl',
+    '[]' : 'ix',
+    '?' : 'qu',
+    ':' : 'it',
+    'cast' : 'cv'
+    }
+
+def operator_and_argtype_to_signature(classname, op, argtype = None):
+    s = '_ZN' + str(len(classname)) + classname + op_to_opname[op]
+    s += 'P'
+
+    if argtype != None:
+        if type(argtype) == ArrayType:
+            s += 'p' + str(len(argtype.basetype)) + argtype.basetype
+        else:
+            s += str(len(argtype)) + argtype
+
+    return s
+    
+
 def name_and_argtypes_to_signature(name, argtypes):
     s = '_Z' + str(len(name)) + name + 'E'
     s += 'P'
@@ -13,6 +68,18 @@ def name_and_argtypes_to_signature(name, argtypes):
 
 def class_and_argtypes_to_signature(name, argtypes):
     s = '_ZN' + str(len(name)) + name + 'C1E'
+    s += 'P'
+    for i in argtypes:
+
+        if type(i) == ArrayType:
+            s += 'p' + str(len(i.basetype)) + i.basetype
+        else:
+            s += str(len(i)) + i
+
+    return s
+
+def name_class_and_argtypes_to_signature(classname, name, argtypes):
+    s = '_ZN' + str(len(classname)) + classname + str(len(name)) + name + 'E'
     s += 'P'
     for i in argtypes:
 
@@ -57,7 +124,8 @@ class KyazukenObject:
         f.this = self
 
 class ImportStatement:
-    def __init__(self, path):
+    def __init__(self, path, commonname):
+        self.commonname = commonname
         self.path = path
 
 class Store:
@@ -170,9 +238,9 @@ class IfElseBlock:
             return self.else_statement.execute(context)
 
 class WhileBlock:
-    def __init__(self, condition, lines):
+    def __init__(self, condition, statement):
         self.condition = condition
-        self.lines = lines
+        self.statement = statement
     def execute(self, context):
         while True:
             et, ev = self.iterable.eval(context)
@@ -382,18 +450,14 @@ class Function:
         self.rettype = rettype
         self.args = args
         self.statements = statements
+        self._class = None
     def signature(self):
-        s = '_Z' + str(len(self.name)) + self.name + 'E'
-        s += 'P'
-        for i in self.args:
-            i = i.type
+        argtypes = [i.type for i in self.args]
 
-            if type(i) == ArrayType:
-                s += 'p' + str(len(i.basetype)) + i.basetype
-            else:
-                s += str(len(i)) + i
-
-        return s
+        if self._class == None:
+            return name_and_argtypes_to_signature(self.name, argtypes)
+        else:
+            return name_class_and_argtypes_to_signature(self._class.name, self.name, argtypes)
 
     def call(self, environment, arguments):
 
@@ -406,6 +470,15 @@ class Function:
         context = Context(environment, argtypes, argdict)
         for i in self.statements:
             i.execute(context)
+
+class OperatorOverload(Function):
+    def __init__(self, op, rettype, statements, arg = None):
+        super().__init__(None, rettype, [] if arg is None else [arg], statements)
+
+        self.op = op
+        self.arg = arg
+    def signature(self):
+        return operator_and_argtype_to_signature(self._class.name, self.op, self.arg)
 
 class ClassDefinition:
     def __init__(self, name, items):
@@ -429,6 +502,7 @@ class ClassDefinition:
                 i._class = self
 
             elif isinstance(i, Function):
+                i._class = self
                 func[i.signature()] = i
             else:
                 raise Exception(i)

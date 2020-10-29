@@ -3,6 +3,7 @@ from kenvironment import KyazukenDocument
 
 from rply import LexerGenerator
 from rply import ParserGenerator
+from rply.errors import LexingError
 
 import os
 import sys
@@ -25,6 +26,7 @@ class Lexer():
         self.lexer.add('WHILE', r'\bwhile\b')
         self.lexer.add('FOR', r'\bfor\b')
         self.lexer.add('CLASS', r'\bclass\b')
+        self.lexer.add('OPERATOR', r'\boperator\b')
         self.lexer.add('MUTABLE', r'\bmutable\b')
         self.lexer.add('PUBLIC', r'\bpublic\b')
         self.lexer.add('PRIVATE', r'\bprivate\b')
@@ -50,8 +52,8 @@ class Lexer():
         # Syntax Helper Bytes
         self.lexer.add('SEMICOLON', r'\;')
         self.lexer.add('COMMA', r'\,')
+        self.lexer.add('CHAR', r"\'([^\\\n\r]|\\[rnft\'])\'")
         self.lexer.add('STRING', r'\"[^"]*\"')
-        self.lexer.add('CHAR', r'\'(.|\\[rnft])\'')
         # Operators
         self.lexer.add('!=', '!=')
         self.lexer.add('==', '==')
@@ -88,7 +90,15 @@ class Lexer():
         return self.lexer.build()
 
 OP_NAMES = ['SUM', 'SUB', 'MUL', 'DIV', 'OR', 'AND', 'XOR', 'MOD',
-            '==', '!=', '<=', '>=', '<', '>', 'INC', 'DEC', '||', '&&', '^^']
+            '==', '!=', '<=', '>=', '<', '>', 'INC', 'DEC', '||', '&&', '^^',
+            '+=', '-=', '*=', '/=', '<<', '>>', '<<=', '>>=']
+
+class KSyntaxError(Exception):
+    def __init__(self, token):
+        super().__init__(token)
+        self.token = token
+    def __str__(self):
+        return "Unexpected '" + self.token.getstr() + "' on line " + str(self.token.getsourcepos().lineno)
 
 class KyazukenParser:
     def __init__(self, file):
@@ -97,7 +107,7 @@ class KyazukenParser:
             ['INTEGER', 'NAME', 'OPEN_PAREN', 'CLOSE_PAREN', 'INTTYPE', 'MEMBER', 'FLOATTYPE',
              'OPEN_CURLY', 'CLOSE_CURLY', 'VOID', "STRING", 'STRINGTYPE', 'OPEN_BRACKET', 'CLOSE_BRACKET',
              'IF', 'WHILE', 'RETURN', 'COLON', 'CLASS', 'EXTENDS', 'MUTABLE', 'NOT', 'NEW',
-             'DOUBLE', 'BOOL', 'CHAR', 'IMPORT', 'PUBLIC', 'PRIVATE', 'FOR', 'ELSE',
+             'DOUBLE', 'BOOL', 'CHAR', 'IMPORT', 'PUBLIC', 'PRIVATE', 'FOR', 'ELSE', 'OPERATOR',
              'SEMICOLON', 'COMMA', 'EQ'] + OP_NAMES,
             precedence = [
                 ('right', ['ELSE']),
@@ -151,19 +161,20 @@ class KyazukenParser:
 
         @self.pg.production('import : IMPORT import_path SEMICOLON')
         def import_statement(p):
-            return ImportStatement(p[1])
+            return ImportStatement(*p[1])
 
         @self.pg.production('import_path : import_path MEMBER NAME')
         def import_path_ext(p):
-            return p[0] + '/' + p[2].getstr()
+            path, common = p[0]
+            return path + '/' + p[2].getstr(), common + '.' + p[2].getstr()
 
         @self.pg.production('import_path : NAME')
         def import_path_name_only(p):
-            return p[0].getstr()
+            return p[0].getstr(), p[0].getstr()
 
         @self.pg.production('import_path : MEMBER NAME')
         def import_path_name_local(p):
-            return './' + p[1].getstr()
+            return './' + p[1].getstr(), '.' + p[1].getstr()
 
         @self.pg.production('statement : COLON OPEN_PAREN expr_li CLOSE_PAREN SEMICOLON')
         def superconstructor(p):
@@ -182,6 +193,7 @@ class KyazukenParser:
         
         @self.pg.production('class_li : class_li scope func')
         @self.pg.production('class_li : class_li scope constructor')
+        @self.pg.production('class_li : class_li scope overload')
         def class_list_3(p):
             return p[0] + [p[2]]
 
@@ -205,6 +217,15 @@ class KyazukenParser:
         @self.pg.production('constructor : NAME OPEN_PAREN dec_list CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
         def constructor(p):
             return Constructor(p[0].getstr(), p[2], p[5])
+
+        @self.pg.production('overload : NAME OPERATOR uniop OPEN_PAREN CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
+        @self.pg.production('overload : NAME OPERATOR COLON OPEN_PAREN CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
+        def uniop_overload(p):
+            return OperatorOverload(p[2].getstr(), p[0].getstr())
+
+        @self.pg.production('overload : NAME OPERATOR dualop OPEN_PAREN var_dec CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
+        def dualop_overload(p):
+            return OperatorOverload(p[2].getstr(), p[0].getstr(), p[4])
 
         @self.pg.production('expression : NEW NAME OPEN_PAREN expr_li CLOSE_PAREN')
         def new_object(p):
@@ -250,7 +271,7 @@ class KyazukenParser:
 
         @self.pg.production('statement : WHILE OPEN_PAREN expression CLOSE_PAREN statement')
         def while_loop(p):
-            x = WhileLoop(p[2], p[4])
+            x = WhileBlock(p[2], p[4])
             x.lineinfo = p[0].getsourcepos()
             return x
 
@@ -298,35 +319,51 @@ class KyazukenParser:
         def subscript(p):
             return Subscript(p[0], p[2])
 
-        @self.pg.production('expression : expression SUM expression')
-        @self.pg.production('expression : expression SUB expression')
-        @self.pg.production('expression : expression MUL expression')
-        @self.pg.production('expression : expression DIV expression')
-        @self.pg.production('expression : expression MOD expression')
-        @self.pg.production('expression : expression AND expression')
-        @self.pg.production('expression : expression OR expression')
-        @self.pg.production('expression : expression XOR expression')
-        @self.pg.production('expression : expression >= expression')
-        @self.pg.production('expression : expression == expression')
-        @self.pg.production('expression : expression != expression')
-        @self.pg.production('expression : expression <= expression')
-        @self.pg.production('expression : expression > expression')
-        @self.pg.production('expression : expression < expression')
-        @self.pg.production('expression : expression || expression')
-        @self.pg.production('expression : expression && expression')
-        @self.pg.production('expression : expression ^^ expression')
+        @self.pg.production('expression : expression dualop expression')
         def expression(p):
             left = p[0]
             right = p[2]
             operator = p[1]
             return BinOp(left, operator.getstr(), right)
 
-        @self.pg.production('expression : INC assignable')
-        @self.pg.production('expression : DEC assignable')
-        @self.pg.production('expression : SUB expression')
-        @self.pg.production('expression : NOT expression')
+        @self.pg.production('expression : uniop expression')
         def onearg_expr(p):
             return UniOp(p[1], p[0].getstr())
+
+        @self.pg.production('dualop : SUM')
+        @self.pg.production('dualop : SUB')
+        @self.pg.production('dualop : MUL')
+        @self.pg.production('dualop : DIV')
+        @self.pg.production('dualop : MOD')
+        @self.pg.production('dualop : AND')
+        @self.pg.production('dualop : OR')
+        @self.pg.production('dualop : XOR')
+        @self.pg.production('dualop : >=')
+        @self.pg.production('dualop : ==')
+        @self.pg.production('dualop : !=')
+        @self.pg.production('dualop : <=')
+        @self.pg.production('dualop : >')
+        @self.pg.production('dualop : <')
+        @self.pg.production('dualop : ||')
+        @self.pg.production('dualop : &&')
+        @self.pg.production('dualop : ^^')
+        @self.pg.production('dualop : <<')
+        @self.pg.production('dualop : >>')
+        @self.pg.production('dualop : <<=')
+        @self.pg.production('dualop : >>=')
+        @self.pg.production('dualop : +=')
+        @self.pg.production('dualop : -=')
+        @self.pg.production('dualop : *=')
+        @self.pg.production('dualop : /=')
+        def dualop(p):
+            return p[0]
+
+        @self.pg.production('uniop : INC')
+        @self.pg.production('uniop : DEC')
+        @self.pg.production('uniop : SUB')
+        @self.pg.production('uniop : NOT')
+        def uniop(p):
+            return p[0]
 
         @self.pg.production('assignable : expression MEMBER NAME')
         def member(p):
@@ -404,7 +441,7 @@ class KyazukenParser:
         def error_handle(token):
             src = token.getsourcepos()
             print("Syntax error at " + self.path + ':' + str(src.lineno))
-            raise ValueError(token)
+            raise KSyntaxError(token)
 
     def get_parser(self):
         return self.pg.build()
@@ -413,13 +450,40 @@ def parse_ast(filename):
     print("Parsing " + filename)
 
     f = open(filename)
-    lexer = Lexer().get_lexer()
-    tokens = lexer.lex(f.read())
+    text = f.read().replace('\r', '\n')
+    f.close()
+
+    lines = [''] + text.split('\n')
+
+    try:
+        lexer = Lexer().get_lexer()
+        tokens = lexer.lex(text)
+    except LexingError as e:
+        srcpos = e.source_pos
+        print(e)
+        if srcpos.lineno > 0:
+            print(lines[srcpos.lineno].replace('\t', ' '))
+            print(' '*(srcpos.colno - 1) + '^ here')
+        else:
+            i = text[:srcpos.idx].rfind('\n') + 1
+            print(text[i:].split('\n')[0].replace('\t', ' '))
+            print(' '*(srcpos.idx - i) + '^ here')
+        print()
+        return None
 
     pg = KyazukenParser(filename)
     pg.parse()
     parser = pg.get_parser()
-    return parser.parse(tokens)
+
+    try:
+        return parser.parse(tokens)
+    except KSyntaxError as e:
+        srcpos = e.token.getsourcepos()
+        print(e)
+        print(lines[srcpos.lineno].replace('\t', ' '))
+        print(' '*(srcpos.colno - 1) + '^ here')
+        print()
+        return None
 
 FILE_EXTENTIONS = ['.kya', '.k']
 
@@ -433,6 +497,8 @@ def elaborate_ast(ast, filename, docs = None):
 
     all_statements = ast.copy()
 
+    errors = 0
+
     for i in ast:
         if type(i) == ImportStatement:
             path = i.path.replace('.', root_path)
@@ -443,11 +509,18 @@ def elaborate_ast(ast, filename, docs = None):
                     break
 
             if not '.' in path.split('/')[-1]:
-                print("Error: Could not import " + path.replace('.', '').replace('/', '.'))
+                print("Error: Could not import " + i.commonname + ' from file ' + filename)
+                errors += 1
             else:
-                ast = parse_ast(path)
-                imported_doc = elaborate_ast(ast, path, docs)[0]
-                doc.add_imported_document(imported_doc)
+                new_ast = parse_ast(path)
+                if new_ast is None:
+                    print("Skipping " + path + " due to syntax error(s), will continue elaboration without it")
+                    print()
+                    errors += 1
+                else:
+                    imported_doc, docs, new_errors = elaborate_ast(new_ast, path, docs)[0]
+                    doc.add_imported_document(imported_doc)
+                    errors += new_errors
 
     for i in ast:
         if type(i) == Function:
@@ -459,18 +532,22 @@ def elaborate_ast(ast, filename, docs = None):
         elif type(i) in [ClassDefinition, ClassInheriting]:
             doc.classes[i.name] = i
 
-    return doc, docs
+    return doc, docs, errors
 
 filename = 'kyac/main.k'
 
 ast = parse_ast(filename)
 
 print('Elaborate...')
-document = elaborate_ast(ast, filename)
+document, documents, errors = elaborate_ast(ast, filename)
 
-print('Execute:')
+if errors == 0:
+    print('Execute:')
 
-try:
-    document.execute(document.make_default_env(), ['kyac', 'kyac/main.k'])
-except KyazukenError as e:
-    sys.stderr.write("Error: " + str(e) + '\n')
+    try:
+        document.execute(document.make_default_env(), ['kyac', 'kyac/main.k'])
+    except KyazukenError as e:
+        sys.stderr.write("Error: " + str(e) + '\n')
+else:
+    print("There were errors.  Will not execute.")
+
