@@ -36,17 +36,17 @@ class Parser {
 				String token = lexy.get_next_token();
 				if (token == "mutable") {
 					is_mutable = true;
-					
+
 				} else if (token == "abstract")
 					is_abstract = true;
-				
+
 				if (token != "class")
 					syntax_error("Unexpected token in class definition '" + token + "'");
 			}
 		}
 	}
 
-	Toplevel parse_import() {
+	private Toplevel parse_import() {
 		String first_token = lexy.get_next_token();
 
 		if (first_token == ";") {
