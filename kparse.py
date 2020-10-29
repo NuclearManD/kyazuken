@@ -59,8 +59,16 @@ class Lexer():
         self.lexer.add('==', '==')
         self.lexer.add('>=', '>=')
         self.lexer.add('<=', '<=')
-        self.lexer.add('>', '>')
-        self.lexer.add('<', '<')
+        self.lexer.add('+=', '[+]=')
+        self.lexer.add('-=', '[-]=')
+        self.lexer.add('*=', '[*]=')
+        self.lexer.add('/=', '[/]=')
+        self.lexer.add('>', '[>]')
+        self.lexer.add('<', '[<]')
+        self.lexer.add('>>', '[>][>]')
+        self.lexer.add('<<', '[<][<]')
+        self.lexer.add('>>=', '>>=')
+        self.lexer.add('<<=', '<<=')
         self.lexer.add('^^', r'\^\^')
         self.lexer.add('&&', r'\&\&')
         self.lexer.add('||', r'\|\|')
@@ -218,14 +226,14 @@ class KyazukenParser:
         def constructor(p):
             return Constructor(p[0].getstr(), p[2], p[5])
 
-        @self.pg.production('overload : NAME OPERATOR uniop OPEN_PAREN CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
-        @self.pg.production('overload : NAME OPERATOR COLON OPEN_PAREN CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
+        @self.pg.production('overload : type OPERATOR uniop OPEN_PAREN CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
+        @self.pg.production('overload : type OPERATOR COLON OPEN_PAREN CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
         def uniop_overload(p):
-            return OperatorOverload(p[2].getstr(), p[0].getstr(), p[6])
+            return OperatorOverload(p[2].getstr(), p[0], p[6])
 
-        @self.pg.production('overload : NAME OPERATOR dualop OPEN_PAREN var_dec CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
+        @self.pg.production('overload : type OPERATOR dualop OPEN_PAREN var_dec CLOSE_PAREN OPEN_CURLY statement_li CLOSE_CURLY')
         def dualop_overload(p):
-            return OperatorOverload(p[2].getstr(), p[0].getstr(), p[4], p[6])
+            return OperatorOverload(p[2].getstr(), p[0], p[4], p[6])
 
         @self.pg.production('expression : NEW NAME OPEN_PAREN expr_li CLOSE_PAREN')
         def new_object(p):
@@ -518,7 +526,7 @@ def elaborate_ast(ast, filename, docs = None):
                     print()
                     errors += 1
                 else:
-                    imported_doc, docs, new_errors = elaborate_ast(new_ast, path, docs)[0]
+                    imported_doc, docs, new_errors = elaborate_ast(new_ast, path, docs)
                     doc.add_imported_document(imported_doc)
                     errors += new_errors
 

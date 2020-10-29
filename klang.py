@@ -491,7 +491,7 @@ class ClassDefinition:
         func = {}
         var = {}
         for i in items:
-            if isinstance(i, VariableDeclaration):
+            if isinstance(i, VariableDeclaration) or isinstance(i, VariableDefinition):
                 var[i.name] = i
             elif isinstance(i, Constructor):
                 if i.name != name:
@@ -505,7 +505,7 @@ class ClassDefinition:
                 i._class = self
                 func[i.signature()] = i
             else:
-                raise Exception(i)
+                raise Exception("INTERNAL ERROR: " + str(i))
         self.con = con
         self.func = func
         self.vars = var
